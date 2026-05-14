@@ -25,6 +25,7 @@ export default function Home() {
   const [curCat, setCurCat] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [galleryError, setGalleryError] = useState('');
   const [sortOrder, setSortOrder] = useState('new');
   const [lbOpen, setLbOpen] = useState(false);
   const [lbIdx, setLbIdx] = useState(0);
@@ -451,6 +452,16 @@ export default function Home() {
             {loading ? (
               <div className="photo-grid" style={s.photoGrid}>
                 {Array(8).fill(0).map((_,i) => <div key={i} style={{...s.skel,backgroundImage:'linear-gradient(90deg,var(--cream) 25%,#ede5e0 50%,var(--cream) 75%)',backgroundSize:'200% 100%'}}/>)}
+              </div>
+            ) : galleryError ? (
+              <div style={{textAlign:'center',padding:'5rem 1.5rem',color:'var(--gray)'}}>
+                <div style={{fontSize:'2.8rem',marginBottom:'.9rem'}}>⚠️</div>
+                <h3 style={{fontFamily:'var(--fd)',fontSize:'1.25rem',color:'var(--mid)',marginBottom:'.5rem'}}>Gallery failed to load</h3>
+                <p style={{fontSize:'.84rem',fontWeight:300,marginBottom:'1rem',maxWidth:440,margin:'0 auto .8rem'}}>{galleryError}</p>
+                <p style={{fontSize:'.78rem',color:'var(--gray-lt)',maxWidth:440,margin:'0 auto',lineHeight:1.7}}>
+                  If you just deployed: make sure <strong style={{color:'var(--dark)'}}>MONGODB_URI</strong> is set in your Vercel environment variables and you have redeployed after adding it.
+                </p>
+                <button onClick={() => openCat(curCat)} style={{marginTop:'1.2rem',padding:'.6rem 1.5rem',background:'var(--rose)',color:'#fff',border:'none',borderRadius:100,fontSize:'.8rem',cursor:'pointer',fontFamily:'var(--fb)'}}>Try Again</button>
               </div>
             ) : items.length === 0 ? (
               <div style={{textAlign:'center',padding:'5rem 1.5rem',color:'var(--gray)'}}>

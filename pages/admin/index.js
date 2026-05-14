@@ -77,6 +77,9 @@ export default function Admin() {
   const [ytOk, setYtOk] = useState('');
 
   const [pwCur, setPwCur] = useState('');
+  // connection test
+  const [connTest, setConnTest] = useState(null);
+  const [connTesting, setConnTesting] = useState(false);
   const [pwNew, setPwNew] = useState('');
   const [pwCon, setPwCon] = useState('');
   const [pwResult, setPwResult] = useState(null);
@@ -176,19 +179,41 @@ export default function Admin() {
       batch.forEach(f => fd.append('files', f));
       try {
         const r = await fetch('/api/admin/upload', { method:'POST', body: fd });
-        if (!r.ok) throw new Error('Upload failed');
         const d = await r.json();
+        if (!r.ok) {
+          // Show the real error from the server
+          const errMsg = d.error || `Server error ${r.status}`;
+          showToast('Upload error: ' + errMsg, 'err');
+          setUpState('idle');
+          setUpMsg('');
+          document.getElementById('drop-zone-area') && (document.getElementById('drop-zone-area').style.display='block');
+          return;
+        }
         uploaded += d.uploaded || 0;
-      } catch (e) { showToast('Batch error: ' + e.message, 'err'); }
+        // Show any per-file errors
+        if (d.errors && d.errors.length) {
+          d.errors.forEach(e => console.warn('[upload warn]', e));
+        }
+      } catch (e) {
+        showToast('Network error: ' + e.message + ' — check internet connection', 'err');
+        setUpState('idle');
+        return;
+      }
       done += batch.length;
       setUpProg(Math.round((done / total) * 100));
       setUpMsg(`Uploading ${done} of ${total}…`);
     }
 
-    setUpState('done');
-    setUpMsg(`${uploaded} file${uploaded!==1?'s':''} uploaded to "${CATS[upCat]}"!`);
-    showToast(`✅ ${uploaded} file${uploaded!==1?'s':''} uploaded!`, 'ok');
-    loadDash();
+    if (uploaded === 0) {
+      setUpState('idle');
+      setUpMsg('');
+      showToast('No files were uploaded. Check that files are JPG/PNG/WEBP and under 20MB.', 'err');
+    } else {
+      setUpState('done');
+      setUpMsg(`${uploaded} photo${uploaded!==1?'s':''} uploaded to "${CATS[upCat]}" — now visible on the website!`);
+      showToast(`✅ ${uploaded} photo${uploaded!==1?'s':''} uploaded successfully!`, 'ok');
+      loadDash();
+    }
   };
 
   // ── manage actions ─────────────────────
@@ -776,6 +801,67 @@ export default function Admin() {
                     </div>
                   ))}
                   <button onClick={changePassword} style={{padding:'.7rem 1.5rem',background:C.rose,color:'#fff',fontSize:'.83rem',fontWeight:600,borderRadius:8,border:'none',cursor:'pointer',fontFamily:"'Outfit',system-ui",transition:'all .22s'}}>Update Password</button>
+                </div>
+
+                {/* connection test */}
+                <div style={{...card,padding:'1.5rem',maxWidth:480,marginBottom:'1.3rem'}}>
+                  <h3 style={{fontSize:'.88rem',fontWeight:600,color:'#fff',marginBottom:'1.1rem',paddingBottom:'.7rem',borderBottom:`1px solid ${C.border}`}}>🔌 Connection Test</h3>
+                  <p style={{fontSize:'.8rem',color:C.gray,marginBottom:'1rem',lineHeight:1.65}}>Test that MongoDB, Cloudinary and your environment variables are all configured correctly. Run this if uploads aren't working.</p>
+                  <button
+                    disabled={connTesting}
+                    onClick={async () => {
+                      setConnTesting(true); setConnTest(null);
+                      try {
+                        const r = await fetch('/api/admin/test-connection');
+                        const d = await r.json();
+                        setConnTest(d);
+                      } catch(e) { setConnTest({ allOk:false, networkError: e.message }); }
+                      setConnTesting(false);
+                    }}
+                    style={{padding:'.68rem 1.4rem',background:connTesting?'rgba(255,255,255,.09)':C.blue,color:connTesting?C.gray:'#fff',fontSize:'.83rem',fontWeight:600,borderRadius:8,border:'none',cursor:connTesting?'not-allowed':'pointer',fontFamily:"'Outfit',system-ui",display:'flex',alignItems:'center',gap:'.4rem',marginBottom:'1rem',transition:'all .22s'}}>
+                    {connTesting ? <><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.25)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>Testing…</> : '▶ Run Connection Test'}
+                  </button>
+                  {connTest && (
+                    <div style={{display:'flex',flexDirection:'column',gap:'.5rem'}}>
+                      {/* overall result */}
+                      <div style={{padding:'.75rem 1rem',borderRadius:8,background:connTest.allOk?C.greenBg:C.redBg,border:`1px solid ${connTest.allOk?'rgba(34,197,94,.25)':'rgba(239,68,68,.25)'}`,marginBottom:'.5rem'}}>
+                        <span style={{fontSize:'.85rem',fontWeight:600,color:connTest.allOk?C.green:'#FCA5A5'}}>
+                          {connTest.allOk ? '✅ All systems working — uploads should work fine.' : '❌ Problems found — see details below.'}
+                        </span>
+                      </div>
+                      {/* env vars */}
+                      {connTest.envVars && (
+                        <div>
+                          <div style={{fontSize:'.68rem',letterSpacing:'.1em',textTransform:'uppercase',color:C.gray,marginBottom:'.4rem',fontWeight:600}}>Environment Variables</div>
+                          {Object.entries(connTest.envVars).map(([k,v]) => (
+                            <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'.35rem 0',borderBottom:`1px solid ${C.border}`,fontSize:'.79rem'}}>
+                              <code style={{color:C.grayLt,fontSize:'.75rem'}}>{k}</code>
+                              <span style={{color:v?C.green:'#FCA5A5',fontWeight:600,fontSize:'.75rem'}}>{v?'✅ Set':'❌ Missing'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* mongodb */}
+                      {connTest.mongodb && (
+                        <div style={{padding:'.65rem .9rem',borderRadius:7,background:connTest.mongodb.ok?'rgba(34,197,94,.07)':'rgba(239,68,68,.07)',border:`1px solid ${connTest.mongodb.ok?'rgba(34,197,94,.2)':'rgba(239,68,68,.2)'}`}}>
+                          <div style={{fontSize:'.75rem',fontWeight:600,color:connTest.mongodb.ok?C.green:'#FCA5A5',marginBottom:'.2rem'}}>MongoDB Atlas {connTest.mongodb.ok?'✅':'❌'}</div>
+                          <div style={{fontSize:'.72rem',color:C.gray}}>{connTest.mongodb.message}</div>
+                        </div>
+                      )}
+                      {/* cloudinary */}
+                      {connTest.cloudinary && (
+                        <div style={{padding:'.65rem .9rem',borderRadius:7,background:connTest.cloudinary.ok?'rgba(34,197,94,.07)':'rgba(239,68,68,.07)',border:`1px solid ${connTest.cloudinary.ok?'rgba(34,197,94,.2)':'rgba(239,68,68,.2)'}`}}>
+                          <div style={{fontSize:'.75rem',fontWeight:600,color:connTest.cloudinary.ok?C.green:'#FCA5A5',marginBottom:'.2rem'}}>Cloudinary {connTest.cloudinary.ok?'✅':'❌'}</div>
+                          <div style={{fontSize:'.72rem',color:C.gray}}>{connTest.cloudinary.message}{connTest.cloudinary.cloudName ? ` (${connTest.cloudinary.cloudName})` : ''}</div>
+                        </div>
+                      )}
+                      {!connTest.allOk && (
+                        <div style={{padding:'.75rem',background:'rgba(59,130,246,.07)',border:'1px solid rgba(59,130,246,.2)',borderRadius:8,fontSize:'.75rem',color:'#93C5FD',lineHeight:1.7}}>
+                          💡 <strong>Fix:</strong> Go to Vercel Dashboard → Your Project → Settings → Environment Variables. Add any missing variables, then click <strong>Redeploy</strong>.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* system info */}
