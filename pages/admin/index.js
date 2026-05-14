@@ -201,12 +201,12 @@ export default function Admin() {
       setUpMsg(`Uploading ${done + 1} of ${total}: ${file.name}…`);
 
       const fd = new FormData();
-      fd.append('file', file);
-      fd.append('api_key',       sigData.apiKey);
-      fd.append('timestamp',     sigData.timestamp);
-      fd.append('signature',     sigData.signature);
-      fd.append('folder',        sigData.folder);
-      fd.append('transformation', sigData.transformation);
+      fd.append('file',      file);
+      fd.append('api_key',   sigData.apiKey);
+      fd.append('timestamp', String(sigData.timestamp));
+      fd.append('signature', sigData.signature);
+      fd.append('folder',    sigData.folder);
+      // Note: NO transformation here — must match exactly what was signed
 
       try {
         // Upload directly to Cloudinary's upload endpoint

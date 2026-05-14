@@ -2,39 +2,45 @@ import { getIronSession } from 'iron-session';
 import { SESSION_OPTIONS } from '../../../lib/session';
 import { connectDB } from '../../../lib/db';
 import { Media } from '../../../lib/models';
-import { deleteMedia } from '../../../lib/cloudinary';
+import { v2 as cloudinary } from 'cloudinary';
 
-const VALID_CATS = ['birthday','babyshower','inhouse','kids','haldi','mandap','reception','corporate'];
+const VALID_CATS = [
+  'birthday','babyshower','inhouse','kids',
+  'haldi','mandap','reception','corporate'
+];
 
-async function requireAdmin(req, res) {
-  const session = await getIronSession(req, res, SESSION_OPTIONS);
-  if (!session.admin) { res.status(401).json({ error: 'Not authenticated' }); return false; }
-  return true;
+async function auth(req, res) {
+  try {
+    const session = await getIronSession(req, res, SESSION_OPTIONS);
+    return session.admin === true;
+  } catch { return false; }
 }
 
 export default async function handler(req, res) {
-  if (!await requireAdmin(req, res)) return;
+  if (!await auth(req, res))
+    return res.status(401).json({ error: 'Not authenticated' });
+
   await connectDB();
 
-  // GET — list media (optionally filter by category)
+  // GET — list items
   if (req.method === 'GET') {
-    const { category, limit = 200 } = req.query;
+    const { category, limit = '200' } = req.query;
     const filter = category && VALID_CATS.includes(category) ? { category } : {};
     const items = await Media.find(filter)
       .sort({ createdAt: -1 })
-      .limit(Number(limit))
-      .select('-__v');
+      .limit(parseInt(limit, 10))
+      .lean();
     return res.status(200).json({ items });
   }
 
-  // PATCH — edit caption or move category
+  // PATCH — edit caption / move category
   if (req.method === 'PATCH') {
     const { id, caption, category } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
-    const update = {};
-    if (caption !== undefined) update.cap = String(caption).slice(0, 120);
-    if (category && VALID_CATS.includes(category)) update.category = category;
-    await Media.findByIdAndUpdate(id, update);
+    const upd = {};
+    if (caption  !== undefined) upd.cap      = String(caption).slice(0,120);
+    if (category && VALID_CATS.includes(category)) upd.category = category;
+    await Media.findByIdAndUpdate(id, upd);
     return res.status(200).json({ ok: true });
   }
 
@@ -43,11 +49,17 @@ export default async function handler(req, res) {
     const { id } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
     const item = await Media.findByIdAndDelete(id);
-    if (item) {
-      await deleteMedia(item.publicId, item.type === 'video' ? 'video' : 'image').catch(() => {});
+    if (item?.publicId) {
+      cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key:    process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET,
+        secure: true,
+      });
+      await cloudinary.uploader.destroy(item.publicId).catch(() => {});
     }
     return res.status(200).json({ ok: true });
   }
 
-  res.status(405).end();
+  return res.status(405).end();
 }

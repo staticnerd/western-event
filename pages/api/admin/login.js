@@ -6,34 +6,37 @@ import { checkLoginRate, resetLoginRate } from '../../../lib/ratelimit';
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown';
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+             req.socket?.remoteAddress || 'unknown';
   const rate = checkLoginRate(ip);
 
   if (!rate.allowed) {
     return res.status(429).json({
-      error: `Too many attempts. Try again in ${Math.ceil(rate.retryAfter / 60)} minutes.`
+      error: `Too many login attempts. Try again in ${Math.ceil(rate.retryAfter / 60)} minutes.`
     });
   }
 
-  const { username, password } = req.body || {};
+  const { username = '', password = '' } = req.body || {};
 
-  // Constant-time comparison to prevent timing attacks
-  const storedUsername = process.env.ADMIN_USERNAME || 'admin';
-  const storedHash     = process.env.ADMIN_PASSWORD_HASH || '';
+  const storedUser = process.env.ADMIN_USERNAME || 'admin';
+  const storedHash = process.env.ADMIN_PASSWORD_HASH || '';
 
-  const userMatch = username === storedUsername;
-  // Always run bcrypt even if username is wrong (prevents timing oracle)
-  const passMatch = await bcrypt.compare(password || '', storedHash || '$2b$12$invalid_hash_padding_xxxxxxxx');
+  // Always run bcrypt to prevent timing attacks
+  const passOk = await bcrypt.compare(
+    password,
+    storedHash || '$2b$12$invalidhashpadding000000000000000000000000000'
+  );
+  const userOk = username === storedUser;
 
-  if (!userMatch || !passMatch) {
-    await new Promise(r => setTimeout(r, 400 + Math.random() * 200)); // jitter delay
-    return res.status(401).json({ error: 'Invalid credentials' });
+  if (!userOk || !passOk) {
+    await new Promise(r => setTimeout(r, 300 + Math.random() * 200));
+    return res.status(401).json({ error: 'Invalid username or password.' });
   }
 
-  // Success — create session
-  resetLoginRate(ip); // clear attempts on success
+  resetLoginRate(ip);
+
   const session = await getIronSession(req, res, SESSION_OPTIONS);
-  session.admin = true;
+  session.admin     = true;
   session.loginTime = Date.now();
   await session.save();
 
