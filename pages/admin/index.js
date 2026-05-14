@@ -168,50 +168,104 @@ export default function Admin() {
     if (!files.length) { showToast('Please add some files', 'warn'); return; }
     setUpState('uploading'); setUpProg(0);
 
-    const BATCH = 5;
-    let done = 0; let total = files.length; let uploaded = 0;
+    const total = files.length;
+    let done = 0;
+    let uploaded = 0;
+    const errs = [];
 
-    for (let i = 0; i < files.length; i += BATCH) {
-      const batch = files.slice(i, i + BATCH);
-      const fd = new FormData();
-      fd.append('category', upCat);
-      fd.append('caption', upCap.trim());
-      batch.forEach(f => fd.append('files', f));
-      try {
-        const r = await fetch('/api/admin/upload', { method:'POST', body: fd });
-        const d = await r.json();
-        if (!r.ok) {
-          // Show the real error from the server
-          const errMsg = d.error || `Server error ${r.status}`;
-          showToast('Upload error: ' + errMsg, 'err');
-          setUpState('idle');
-          setUpMsg('');
-          document.getElementById('drop-zone-area') && (document.getElementById('drop-zone-area').style.display='block');
-          return;
-        }
-        uploaded += d.uploaded || 0;
-        // Show any per-file errors
-        if (d.errors && d.errors.length) {
-          d.errors.forEach(e => console.warn('[upload warn]', e));
-        }
-      } catch (e) {
-        showToast('Network error: ' + e.message + ' — check internet connection', 'err');
+    // ── STEP 1: Get a signed upload signature from our server ──
+    // This is a tiny JSON request — no file bytes, no size limit issues
+    let sigData;
+    try {
+      const sigRes = await fetch('/api/admin/sign-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: upCat }),
+      });
+      if (!sigRes.ok) {
+        const e = await sigRes.json();
+        showToast('Auth error: ' + (e.error || 'Could not get upload signature'), 'err');
         setUpState('idle');
         return;
       }
-      done += batch.length;
+      sigData = await sigRes.json();
+    } catch (e) {
+      showToast('Network error getting signature: ' + e.message, 'err');
+      setUpState('idle');
+      return;
+    }
+
+    // ── STEP 2: Upload each file DIRECTLY to Cloudinary from browser ──
+    // Files go straight to Cloudinary — never touch Vercel — no size limit!
+    for (const file of files) {
+      setUpMsg(`Uploading ${done + 1} of ${total}: ${file.name}…`);
+
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('api_key',       sigData.apiKey);
+      fd.append('timestamp',     sigData.timestamp);
+      fd.append('signature',     sigData.signature);
+      fd.append('folder',        sigData.folder);
+      fd.append('transformation', sigData.transformation);
+
+      try {
+        // Upload directly to Cloudinary's upload endpoint
+        const uploadRes = await fetch(
+          `https://api.cloudinary.com/v1_1/${sigData.cloudName}/image/upload`,
+          { method: 'POST', body: fd }
+        );
+
+        const uploadData = await uploadRes.json();
+
+        if (!uploadRes.ok || uploadData.error) {
+          errs.push(`${file.name}: ${uploadData.error?.message || 'Cloudinary upload failed'}`);
+          done++;
+          setUpProg(Math.round((done / total) * 100));
+          continue;
+        }
+
+        // ── STEP 3: Tell our server to save the result to MongoDB ──
+        // Just tiny JSON — no file bytes
+        const confirmRes = await fetch('/api/admin/confirm-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            publicId:  uploadData.public_id,
+            secureUrl: uploadData.secure_url,
+            category:  upCat,
+            caption:   upCap.trim() || file.name.replace(/\.[^/.]+$/, ''),
+          }),
+        });
+
+        if (confirmRes.ok) {
+          uploaded++;
+        } else {
+          const ce = await confirmRes.json();
+          errs.push(`${file.name}: saved to Cloudinary but DB error: ${ce.error}`);
+        }
+
+      } catch (e) {
+        errs.push(`${file.name}: ${e.message}`);
+      }
+
+      done++;
       setUpProg(Math.round((done / total) * 100));
-      setUpMsg(`Uploading ${done} of ${total}…`);
+    }
+
+    // ── Done ──
+    if (errs.length) {
+      console.error('[upload errors]', errs);
     }
 
     if (uploaded === 0) {
       setUpState('idle');
       setUpMsg('');
-      showToast('No files were uploaded. Check that files are JPG/PNG/WEBP and under 20MB.', 'err');
+      const firstErr = errs[0] || 'Unknown error';
+      showToast('Upload failed: ' + firstErr, 'err');
     } else {
       setUpState('done');
-      setUpMsg(`${uploaded} photo${uploaded!==1?'s':''} uploaded to "${CATS[upCat]}" — now visible on the website!`);
-      showToast(`✅ ${uploaded} photo${uploaded!==1?'s':''} uploaded successfully!`, 'ok');
+      setUpMsg(`${uploaded} photo${uploaded!==1?'s':''} uploaded to "${CATS[upCat]}" — now live on the website!`);
+      showToast(`✅ ${uploaded} photo${uploaded!==1?'s':''} uploaded!`, 'ok');
       loadDash();
     }
   };
