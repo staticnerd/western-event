@@ -47,7 +47,8 @@ export default function Admin() {
   const [upCap, setUpCap] = useState('');
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
-  const [upState, setUpState] = useState('idle'); // idle | uploading | done | error
+  const [upState, setUpState] = useState('idle'); // idle | uploading | done
+  const [uploadError, setUploadError] = useState('');
   const [upProg, setUpProg] = useState(0);
   const [upMsg, setUpMsg] = useState('');
   const [dragOver, setDragOver] = useState(false);
@@ -190,7 +191,7 @@ export default function Admin() {
   }, []);
 
   const resetUpload = () => {
-    setFiles([]); setPreviews([]); setUpState('idle');
+    setFiles([]); setPreviews([]); setUpState('idle'); setUploadError('');
     setUpProg(0); setUpMsg(''); setUpCap('');
   };
 
@@ -339,8 +340,22 @@ export default function Admin() {
         if (confirmRes.ok) {
           uploaded++;
         } else {
-          const ce = await confirmRes.json().catch(() => ({}));
-          errs.push(`${rawFile.name}: uploaded but DB error — ${ce.error || 'unknown'}`);
+          // Read the real error message from the server
+          let ceMsg = 'unknown DB error';
+          try {
+            const ceText = await confirmRes.text();
+            try {
+              const ce = JSON.parse(ceText);
+              ceMsg = ce.error || ceText.slice(0, 200);
+            } catch {
+              ceMsg = ceText.slice(0, 200);
+            }
+          } catch {}
+          errs.push(`${rawFile.name}: uploaded to Cloudinary OK, but database save failed — ${ceMsg}`);
+          // Stop uploading more if DB is broken — no point continuing
+          done++;
+          setUpProg(Math.round((done / total) * 100));
+          break;
         }
 
       } catch (e) {
@@ -353,17 +368,23 @@ export default function Admin() {
 
     // ── Done ──────────────────────────────────────────────────────────
     if (uploaded === 0) {
-      setUpState('idle'); setUpMsg('');
+      // Show the full error in the UI so owner can actually read it
       const msg = errs.length ? errs[0] : 'No files uploaded.';
-      showToast('Upload failed: ' + msg, 'err');
+      setUpState('idle');
+      setUpMsg('');
+      // Re-show the drop zone
+      showToast('❌ ' + msg, 'err');
+      // Also set a visible error state
+      setUploadError(msg);
     } else {
+      setUploadError('');
       setUpState('done');
       setUpMsg(`${uploaded} photo${uploaded !== 1 ? 's' : ''} uploaded to "${CATS[upCat]}" — now live on the website!`);
       if (errs.length) {
         console.warn('[upload warnings]', errs);
-        showToast(`✅ ${uploaded} uploaded (${errs.length} skipped — see console)`, 'ok');
+        showToast(`✅ ${uploaded} uploaded (${errs.length} had issues)`, 'ok');
       } else {
-        showToast(`✅ ${uploaded} photo${uploaded !== 1 ? 's' : ''} uploaded!`, 'ok');
+        showToast(`✅ ${uploaded} photo${uploaded !== 1 ? 's' : ''} uploaded successfully!`, 'ok');
       }
       loadDash();
     }
@@ -614,6 +635,17 @@ export default function Admin() {
                   </div>
 
                   <div style={{marginBottom:'1rem'}}>
+                    {uploadError && (
+                      <div style={{background:C.redBg,border:`1px solid rgba(239,68,68,.25)`,borderRadius:9,padding:'1rem',marginBottom:'1rem'}}>
+                        <div style={{fontSize:'.8rem',fontWeight:600,color:'#FCA5A5',marginBottom:'.4rem'}}>❌ Upload Failed</div>
+                        <div style={{fontSize:'.78rem',color:'rgba(255,255,255,.6)',lineHeight:1.7,wordBreak:'break-word'}}>{uploadError}</div>
+                        {uploadError.includes('0.0.0.0') || uploadError.includes('timed out') || uploadError.includes('MongoDB') ? (
+                          <div style={{marginTop:'.7rem',padding:'.6rem .8rem',background:'rgba(59,130,246,.1)',border:'1px solid rgba(59,130,246,.2)',borderRadius:7,fontSize:'.75rem',color:'#93C5FD',lineHeight:1.7}}>
+                            💡 <strong>Fix:</strong> Go to <strong>MongoDB Atlas → Network Access → Add IP Address → Allow Access from Anywhere (0.0.0.0/0)</strong> then try again.
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                     <label style={label}>Caption (optional)</label>
                     <input type="text" value={upCap} onChange={e=>setUpCap(e.target.value)} placeholder="e.g. Princess theme — Parramatta 2025" style={inp} disabled={upState==='uploading'}/>
                   </div>
