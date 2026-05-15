@@ -140,18 +140,49 @@ export default function Admin() {
 
   // ── upload helpers ─────────────────────
   const addFiles = useCallback((fList) => {
+    const ALLOWED = ['image/jpeg','image/jpg','image/png','image/webp','image/gif','image/heic','image/heif'];
+    const MAX_MB  = 50; // we compress before upload so allow large originals
     const arr = Array.from(fList);
-    setFiles(prev => [...prev, ...arr]);
+    const valid = []; const skipped = [];
+
     arr.forEach(f => {
-      if (f.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = e => setPreviews(prev => [...prev, { name: f.name, src: e.target.result, isVid: false }]);
-        reader.readAsDataURL(f);
-      } else {
-        setPreviews(prev => [...prev, { name: f.name, src: '', isVid: true }]);
+      const mime = (f.type || '').toLowerCase();
+      if (!ALLOWED.some(t => mime.includes(t.split('/')[1])) && !mime.startsWith('image/')) {
+        skipped.push(`${f.name} (not an image)`);
+        return;
       }
+      if (f.size > MAX_MB * 1024 * 1024) {
+        skipped.push(`${f.name} (over ${MAX_MB}MB)`);
+        return;
+      }
+      valid.push(f);
     });
-  }, []);
+
+    if (skipped.length) showToast(`Skipped: ${skipped.join(', ')}`, 'warn');
+    if (!valid.length) return;
+
+    setFiles(prev => [...prev, ...valid]);
+    valid.forEach(f => {
+      // Generate preview via canvas (also confirms it's a valid image)
+      const img = new Image();
+      const url = URL.createObjectURL(f);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement('canvas');
+        const MAX_PX = 300; // preview only — tiny
+        const scale  = Math.min(MAX_PX / img.width, MAX_PX / img.height, 1);
+        canvas.width  = img.width  * scale;
+        canvas.height = img.height * scale;
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        setPreviews(prev => [...prev, { name: f.name, src: canvas.toDataURL('image/jpeg', 0.7), isVid: false }]);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        setPreviews(prev => [...prev, { name: f.name, src: '', isVid: false }]);
+      };
+      img.src = url;
+    });
+  }, [showToast]);
 
   const removeFile = useCallback((idx) => {
     setFiles(prev => prev.filter((_,i) => i !== idx));
@@ -163,42 +194,102 @@ export default function Admin() {
     setUpProg(0); setUpMsg(''); setUpCap('');
   };
 
+  // ── compress image in browser before uploading ─────────────────
+  const compressImage = (file) => new Promise((resolve) => {
+    const MAX_PX   = 1600; // max dimension
+    const MAX_BYTE = 2 * 1024 * 1024; // target ≤2MB after compression
+
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      // Scale down if larger than MAX_PX
+      let w = img.width, h = img.height;
+      if (w > MAX_PX || h > MAX_PX) {
+        const scale = Math.min(MAX_PX / w, MAX_PX / h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+
+      // Try quality 0.85 first, drop to 0.7 if still too big
+      const tryQuality = (q) => new Promise(res => {
+        canvas.toBlob(blob => res(blob), 'image/jpeg', q);
+      });
+
+      tryQuality(0.85).then(blob => {
+        if (blob && blob.size > MAX_BYTE) {
+          return tryQuality(0.70);
+        }
+        return blob;
+      }).then(blob => {
+        // Return as File so Cloudinary gets a proper filename
+        const compressed = new File(
+          [blob],
+          file.name.replace(/\.[^/.]+$/, '') + '.jpg',
+          { type: 'image/jpeg' }
+        );
+        resolve(compressed);
+      });
+    };
+
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); }; // fallback: use original
+    img.src = url;
+  });
+
   const doUpload = async () => {
-    if (!upCat) { showToast('Please select a category', 'warn'); return; }
-    if (!files.length) { showToast('Please add some files', 'warn'); return; }
-    setUpState('uploading'); setUpProg(0);
+    if (!upCat)       { showToast('Please select a category', 'warn'); return; }
+    if (!files.length){ showToast('Please add some files', 'warn');    return; }
 
-    const total = files.length;
-    let done = 0;
-    let uploaded = 0;
-    const errs = [];
+    setUpState('uploading'); setUpProg(0); setUpMsg('Preparing files…');
 
-    // ── STEP 1: Get a signed upload signature from our server ──
-    // This is a tiny JSON request — no file bytes, no size limit issues
+    const total    = files.length;
+    let done       = 0;
+    let uploaded   = 0;
+    const errs     = [];
+
+    // ── STEP 1: Get signed upload params from our server ─────────────
     let sigData;
     try {
-      const sigRes = await fetch('/api/admin/sign-upload', {
-        method: 'POST',
+      const r = await fetch('/api/admin/sign-upload', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: upCat }),
+        body:    JSON.stringify({ category: upCat }),
       });
-      if (!sigRes.ok) {
-        const e = await sigRes.json();
-        showToast('Auth error: ' + (e.error || 'Could not get upload signature'), 'err');
+      const text = await r.text(); // read as text first — catches HTML error pages
+      try {
+        sigData = JSON.parse(text);
+      } catch {
         setUpState('idle');
+        showToast('Server error getting upload token. Check connection and try again.', 'err');
         return;
       }
-      sigData = await sigRes.json();
+      if (!r.ok || !sigData.ok) {
+        setUpState('idle');
+        showToast('Auth error: ' + (sigData.error || `Status ${r.status}`), 'err');
+        return;
+      }
     } catch (e) {
-      showToast('Network error getting signature: ' + e.message, 'err');
       setUpState('idle');
+      showToast('Cannot reach server: ' + e.message, 'err');
       return;
     }
 
-    // ── STEP 2: Upload each file DIRECTLY to Cloudinary from browser ──
-    // Files go straight to Cloudinary — never touch Vercel — no size limit!
-    for (const file of files) {
-      setUpMsg(`Uploading ${done + 1} of ${total}: ${file.name}…`);
+    // ── STEP 2: Compress + upload each file directly to Cloudinary ────
+    for (const rawFile of files) {
+      setUpMsg(`Compressing ${done + 1} of ${total}…`);
+
+      // Compress in browser → reduces 8MB phone photo to ~300KB
+      let file;
+      try {
+        file = await compressImage(rawFile);
+      } catch { file = rawFile; }
+
+      setUpMsg(`Uploading ${done + 1} of ${total}: ${file.name} (${(file.size/1024).toFixed(0)}KB)…`);
 
       const fd = new FormData();
       fd.append('file',      file);
@@ -206,66 +297,74 @@ export default function Admin() {
       fd.append('timestamp', String(sigData.timestamp));
       fd.append('signature', sigData.signature);
       fd.append('folder',    sigData.folder);
-      // Note: NO transformation here — must match exactly what was signed
 
       try {
-        // Upload directly to Cloudinary's upload endpoint
         const uploadRes = await fetch(
           `https://api.cloudinary.com/v1_1/${sigData.cloudName}/image/upload`,
           { method: 'POST', body: fd }
         );
 
-        const uploadData = await uploadRes.json();
-
-        if (!uploadRes.ok || uploadData.error) {
-          errs.push(`${file.name}: ${uploadData.error?.message || 'Cloudinary upload failed'}`);
+        // Always read as text first to catch non-JSON Cloudinary errors
+        const rawText = await uploadRes.text();
+        let uploadData;
+        try {
+          uploadData = JSON.parse(rawText);
+        } catch {
+          errs.push(`${rawFile.name}: Cloudinary error — ${rawText.slice(0, 120)}`);
           done++;
           setUpProg(Math.round((done / total) * 100));
           continue;
         }
 
-        // ── STEP 3: Tell our server to save the result to MongoDB ──
-        // Just tiny JSON — no file bytes
+        if (!uploadRes.ok || uploadData.error) {
+          const msg = uploadData.error?.message || `HTTP ${uploadRes.status}`;
+          errs.push(`${rawFile.name}: ${msg}`);
+          done++;
+          setUpProg(Math.round((done / total) * 100));
+          continue;
+        }
+
+        // ── STEP 3: Save record to MongoDB via our server ────────────
         const confirmRes = await fetch('/api/admin/confirm-upload', {
-          method: 'POST',
+          method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body:    JSON.stringify({
             publicId:  uploadData.public_id,
             secureUrl: uploadData.secure_url,
             category:  upCat,
-            caption:   upCap.trim() || file.name.replace(/\.[^/.]+$/, ''),
+            caption:   upCap.trim() || rawFile.name.replace(/\.[^/.]+$/, ''),
           }),
         });
 
         if (confirmRes.ok) {
           uploaded++;
         } else {
-          const ce = await confirmRes.json();
-          errs.push(`${file.name}: saved to Cloudinary but DB error: ${ce.error}`);
+          const ce = await confirmRes.json().catch(() => ({}));
+          errs.push(`${rawFile.name}: uploaded but DB error — ${ce.error || 'unknown'}`);
         }
 
       } catch (e) {
-        errs.push(`${file.name}: ${e.message}`);
+        errs.push(`${rawFile.name}: ${e.message}`);
       }
 
       done++;
       setUpProg(Math.round((done / total) * 100));
     }
 
-    // ── Done ──
-    if (errs.length) {
-      console.error('[upload errors]', errs);
-    }
-
+    // ── Done ──────────────────────────────────────────────────────────
     if (uploaded === 0) {
-      setUpState('idle');
-      setUpMsg('');
-      const firstErr = errs[0] || 'Unknown error';
-      showToast('Upload failed: ' + firstErr, 'err');
+      setUpState('idle'); setUpMsg('');
+      const msg = errs.length ? errs[0] : 'No files uploaded.';
+      showToast('Upload failed: ' + msg, 'err');
     } else {
       setUpState('done');
-      setUpMsg(`${uploaded} photo${uploaded!==1?'s':''} uploaded to "${CATS[upCat]}" — now live on the website!`);
-      showToast(`✅ ${uploaded} photo${uploaded!==1?'s':''} uploaded!`, 'ok');
+      setUpMsg(`${uploaded} photo${uploaded !== 1 ? 's' : ''} uploaded to "${CATS[upCat]}" — now live on the website!`);
+      if (errs.length) {
+        console.warn('[upload warnings]', errs);
+        showToast(`✅ ${uploaded} uploaded (${errs.length} skipped — see console)`, 'ok');
+      } else {
+        showToast(`✅ ${uploaded} photo${uploaded !== 1 ? 's' : ''} uploaded!`, 'ok');
+      }
       loadDash();
     }
   };
