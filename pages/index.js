@@ -37,6 +37,7 @@ export default function Home() {
   const [cFile, setCFile] = useState('');
   const [videos, setVideos] = useState([]);
   const [activeVideo, setActiveVideo] = useState(null);
+  const [recentPhotos, setRecentPhotos] = useState([]);
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 8);
@@ -47,6 +48,8 @@ export default function Home() {
   // fetch YouTube videos on load
   useEffect(() => {
     fetch('/api/videos').then(r => r.json()).then(d => setVideos(d.videos || [])).catch(() => {});
+    // Fetch latest photos across all categories for the home page
+    fetch('/api/recent-photos').then(r => r.json()).then(d => setRecentPhotos(d.photos || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -132,6 +135,7 @@ export default function Home() {
           .nav-links,.nav-call{display:none!important}
           .burger{display:flex!important}
           .cats-grid{grid-template-columns:repeat(2,1fr)!important;gap:.75rem!important}
+          .recent-grid{grid-template-columns:repeat(2,1fr)!important;gap:7px!important}
           .photo-grid{grid-template-columns:repeat(2,1fr)!important;gap:7px!important}
           .ch-grid{grid-template-columns:1fr!important}
           .frow{grid-template-columns:1fr!important}
@@ -237,6 +241,85 @@ export default function Home() {
               ))}
             </div>
           </div>
+
+          {/* Recent Work — latest uploaded photos */}
+          {recentPhotos.length > 0 && (
+            <div style={{background:'var(--off)',padding:'3.5rem 1.5rem 0'}}>
+              <div style={{maxWidth:1300,margin:'0 auto'}}>
+                <div style={{textAlign:'center',marginBottom:'2.2rem'}}>
+                  <span style={{fontSize:'.65rem',letterSpacing:'.24em',textTransform:'uppercase',color:'var(--rose)',fontWeight:500,display:'block',marginBottom:'.5rem'}}>Fresh From Our Studio</span>
+                  <h2 style={{fontFamily:'var(--fd)',fontSize:'clamp(1.7rem,3.5vw,2.5rem)',fontWeight:400,color:'var(--dark)',marginBottom:'.45rem'}}>Recent Work</h2>
+                  <span style={{display:'block',width:42,height:2,background:'var(--gold)',margin:'.8rem auto 0'}}/>
+                  <p style={{color:'var(--gray)',fontSize:'.88rem',fontWeight:300,marginTop:'.45rem'}}>Our latest event decorations — updated as we complete new events</p>
+                </div>
+
+                {/* Uniform grid — 4 cols desktop, 2 mobile — square cells */}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10}} className="recent-grid">
+                  {recentPhotos.map((photo, i) => (
+                    <div key={photo.id}
+                      onClick={() => openCat(photo.category)}
+                      title={`View all ${CATS[photo.category]?.name || photo.category}`}
+                      style={{
+                        position:'relative',aspectRatio:'1/1',overflow:'hidden',
+                        borderRadius:10,background:'var(--cream)',cursor:'pointer',
+                        boxShadow:'var(--sh)',transition:'transform .35s,box-shadow .35s',
+                      }}
+                      onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-4px)';e.currentTarget.style.boxShadow='0 16px 40px rgba(0,0,0,.13)'}}
+                      onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)';e.currentTarget.style.boxShadow='var(--sh)'}}
+                    >
+                      <img
+                        src={photo.thumb || photo.src}
+                        alt={photo.cap || (CATS[photo.category]?.name + ' decoration')}
+                        loading="lazy"
+                        style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',objectPosition:'center',transition:'transform .5s'}}
+                      />
+                      {/* hover overlay */}
+                      <div style={{
+                        position:'absolute',inset:0,borderRadius:10,
+                        background:'linear-gradient(to top,rgba(24,16,14,.82) 0%,rgba(24,16,14,.05) 50%,transparent 100%)',
+                        opacity:0,transition:'opacity .3s',display:'flex',alignItems:'flex-end',padding:'1rem',
+                      }}
+                        onMouseEnter={e=>e.currentTarget.style.opacity='1'}
+                        onMouseLeave={e=>e.currentTarget.style.opacity='0'}
+                      >
+                        <div>
+                          <div style={{fontFamily:'var(--fd)',color:'#fff',fontSize:'.95rem',fontWeight:600,lineHeight:1.3}}>
+                            {CATS[photo.category]?.name || photo.category}
+                          </div>
+                          {photo.cap && photo.cap !== 'Event photo' && (
+                            <div style={{fontSize:'.7rem',color:'rgba(255,255,255,.6)',marginTop:'.15rem',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:160}}>
+                              {photo.cap}
+                            </div>
+                          )}
+                          <div style={{fontSize:'.65rem',color:'var(--rose)',marginTop:'.3rem',letterSpacing:'.08em',display:'flex',alignItems:'center',gap:'.3rem'}}>
+                            View gallery →
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* "New" badge on the very first photo */}
+                      {i === 0 && (
+                        <div style={{position:'absolute',top:'.6rem',left:'.6rem',background:'var(--rose)',color:'#fff',fontSize:'.6rem',fontWeight:700,letterSpacing:'.1em',textTransform:'uppercase',padding:'.2rem .55rem',borderRadius:100}}>
+                          New
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{textAlign:'center',marginTop:'1.8rem',paddingBottom:'.5rem'}}>
+                  <button
+                    onClick={() => openCat('birthday')}
+                    style={{display:'inline-flex',alignItems:'center',gap:'.4rem',padding:'.65rem 1.8rem',border:'1.5px solid var(--rose)',color:'var(--rose)',borderRadius:100,fontSize:'.78rem',fontWeight:500,cursor:'pointer',background:'none',fontFamily:'var(--fb)',transition:'all .25s'}}
+                    onMouseEnter={e=>{e.currentTarget.style.background='var(--rose)';e.currentTarget.style.color='#fff'}}
+                    onMouseLeave={e=>{e.currentTarget.style.background='none';e.currentTarget.style.color='var(--rose)'}}
+                  >
+                    View Full Gallery →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Categories */}
           <div style={{maxWidth:1300,margin:'0 auto',padding:'4rem 1.5rem 3rem'}}>

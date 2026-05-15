@@ -31,7 +31,7 @@ const C = {
 // ── small reusable style helpers ─────────
 const card  = { background:C.card, border:`1px solid ${C.border}`, borderRadius:10 };
 const label = { display:'block', fontSize:'.67rem', letterSpacing:'.11em', textTransform:'uppercase', color:C.gray, marginBottom:'.35rem', fontWeight:500 };
-const inp   = { width:'100%', padding:'.65rem .85rem', background:'rgba(255,255,255,.05)', border:`1.5px solid ${C.border}`, color:'#fff', borderRadius:8, fontSize:'.87rem', outline:'none', fontFamily:"'Outfit',system-ui,sans-serif", transition:'border-color .2s', appearance:'none' };
+const inp   = { width:'100%', padding:'.65rem .85rem', background:'#2A1E1A', border:`1.5px solid ${C.border}`, color:'#E8E0DE', borderRadius:8, fontSize:'.87rem', outline:'none', fontFamily:"'Outfit',system-ui,sans-serif", transition:'border-color .2s', appearance:'none', colorScheme:'dark' };
 
 export default function Admin() {
   const router = useRouter();
@@ -479,6 +479,8 @@ export default function Admin() {
         @keyframes fup{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
         ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:${C.panel}}::-webkit-scrollbar-thumb{background:${C.rose};border-radius:3px}
         input::placeholder,textarea::placeholder{color:${C.gray}}
+        select{color:#E8E0DE !important;background:#2A1E1A !important;color-scheme:dark}
+        select option{background:#2A1E1A !important;color:#E8E0DE !important}
         input:focus,select:focus,textarea:focus{border-color:${C.rose} !important;background:rgba(255,255,255,.08) !important}
         .mgc:hover{transform:translateY(-2px)}
         .mgc:hover .mgov,.mgc.sel .mgov{opacity:1 !important}
