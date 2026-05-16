@@ -72,6 +72,8 @@ export default function Admin() {
   const [ytUrl, setYtUrl] = useState('');
   const [ytTitle, setYtTitle] = useState('');
   const [ytDesc, setYtDesc] = useState('');
+  const [ytCat, setYtCat] = useState('general');
+  const [ytFeatured, setYtFeatured] = useState(false);
   const [ytLoading, setYtLoading] = useState(false);
   const [ytAdding, setYtAdding] = useState(false);
   const [ytErr, setYtErr] = useState('');
@@ -854,6 +856,36 @@ export default function Admin() {
                         style={{...inp,resize:'vertical',minHeight:70}}/>
                     </div>
 
+                    <div style={{marginBottom:'1rem'}}>
+                      <label style={label}>Category (where this video shows)</label>
+                      <select value={ytCat} onChange={e=>setYtCat(e.target.value)} style={inp}>
+                        <option value="general">🌐 General (all videos section)</option>
+                        <option value="birthday">🎂 Birthday Decor</option>
+                        <option value="babyshower">🍼 Baby Shower</option>
+                        <option value="inhouse">🏡 In House Decoration</option>
+                        <option value="kids">🦄 Kids Theme Decor</option>
+                        <option value="haldi">🌸 Haldi, Mehndi &amp; Sangeet</option>
+                        <option value="mandap">💍 Wedding Mandap</option>
+                        <option value="reception">💒 Wedding Reception</option>
+                        <option value="corporate">🏢 Corporate Events</option>
+                      </select>
+                    </div>
+
+                    <div style={{marginBottom:'1.2rem',padding:'1rem',background:'rgba(212,168,83,.08)',border:`1px solid rgba(212,168,83,.2)`,borderRadius:9}}>
+                      <label style={{display:'flex',alignItems:'center',gap:'.75rem',cursor:'pointer'}}>
+                        <div
+                          onClick={()=>setYtFeatured(f=>!f)}
+                          style={{width:44,height:24,borderRadius:100,background:ytFeatured?'var(--rose)':'rgba(255,255,255,.12)',transition:'background .25s',position:'relative',flexShrink:0,cursor:'pointer'}}
+                        >
+                          <div style={{position:'absolute',top:3,left:ytFeatured?22:3,width:18,height:18,borderRadius:'50%',background:'#fff',transition:'left .25s',boxShadow:'0 1px 4px rgba(0,0,0,.3)'}}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:'.82rem',fontWeight:600,color:'#E8E0DE'}}>⭐ Show in Featured Slideshow</div>
+                          <div style={{fontSize:'.72rem',color:C.gray,marginTop:'.1rem'}}>Featured videos appear in the big slideshow on the home page</div>
+                        </div>
+                      </label>
+                    </div>
+
                     <button
                       disabled={ytAdding || !ytUrl.trim()}
                       onClick={async () => {
@@ -862,12 +894,12 @@ export default function Admin() {
                           const r = await fetch('/api/admin/videos', {
                             method:'POST',
                             headers:{'Content-Type':'application/json'},
-                            body: JSON.stringify({ youtubeUrl:ytUrl, title:ytTitle, description:ytDesc })
+                            body: JSON.stringify({ youtubeUrl:ytUrl, title:ytTitle, description:ytDesc, category:ytCat, featured:ytFeatured })
                           });
                           const d = await r.json();
                           if (r.ok) {
-                            setYtOk('Video added! It will appear in the Latest Videos section on the website.');
-                            setYtUrl(''); setYtTitle(''); setYtDesc('');
+                            setYtOk('Video added! It will appear on the website.');
+                            setYtUrl(''); setYtTitle(''); setYtDesc(''); setYtCat('general'); setYtFeatured(false);
                             loadVideos();
                           } else { setYtErr(d.error || 'Failed to add video.'); }
                         } catch { setYtErr('Connection error. Try again.'); }
@@ -927,9 +959,21 @@ export default function Admin() {
                           </div>
                           {/* info */}
                           <div style={{flex:1,minWidth:0}}>
-                            <div style={{display:'flex',alignItems:'center',gap:'.6rem',marginBottom:'.3rem',flexWrap:'wrap'}}>
-                              <span style={{fontSize:'.85rem',fontWeight:600,color:'#E8E0DE',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:280}}>{v.title || 'Untitled video'}</span>
-                              <span style={{display:'inline-block',padding:'.12rem .5rem',borderRadius:100,fontSize:'.62rem',fontWeight:600,background:v.active?C.greenBg:'rgba(255,255,255,.06)',color:v.active?C.green:C.gray,border:`1px solid ${v.active?'rgba(34,197,94,.25)':C.border}`,whiteSpace:'nowrap'}}>{v.active ? '● Showing on site' : '○ Hidden'}</span>
+                            <div style={{display:'flex',alignItems:'center',gap:'.5rem',marginBottom:'.3rem',flexWrap:'wrap'}}>
+                              <span style={{fontSize:'.85rem',fontWeight:600,color:'#E8E0DE',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:260}}>{v.title || 'Untitled video'}</span>
+                              <span style={{display:'inline-block',padding:'.12rem .5rem',borderRadius:100,fontSize:'.62rem',fontWeight:600,background:v.active?C.greenBg:'rgba(255,255,255,.06)',color:v.active?C.green:C.gray,border:`1px solid ${v.active?'rgba(34,197,94,.25)':C.border}`,whiteSpace:'nowrap'}}>{v.active ? '● Live' : '○ Hidden'}</span>
+                              {v.featured && <span style={{display:'inline-block',padding:'.12rem .5rem',borderRadius:100,fontSize:'.62rem',fontWeight:600,background:'rgba(212,168,83,.15)',color:'#D4A853',border:'1px solid rgba(212,168,83,.3)',whiteSpace:'nowrap'}}>⭐ Featured</span>}
+                              <span style={{display:'inline-block',padding:'.12rem .5rem',borderRadius:100,fontSize:'.62rem',background:'rgba(255,255,255,.06)',color:C.gray,whiteSpace:'nowrap'}}>
+                                {v.category==='general'?'🌐 General':
+                                 v.category==='birthday'?'🎂 Birthday':
+                                 v.category==='babyshower'?'🍼 Baby Shower':
+                                 v.category==='inhouse'?'🏡 In House':
+                                 v.category==='kids'?'🦄 Kids':
+                                 v.category==='haldi'?'🌸 Haldi/Mehndi':
+                                 v.category==='mandap'?'💍 Mandap':
+                                 v.category==='reception'?'💒 Reception':
+                                 v.category==='corporate'?'🏢 Corporate':v.category}
+                              </span>
                             </div>
                             {v.description && <p style={{fontSize:'.78rem',color:C.gray,lineHeight:1.55,marginBottom:'.4rem',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{v.description}</p>}
                             <a href={`https://www.youtube.com/watch?v=${v.youtubeId}`} target="_blank" rel="noopener noreferrer"
@@ -938,23 +982,53 @@ export default function Admin() {
                             </a>
                           </div>
                           {/* actions */}
-                          <div style={{display:'flex',flexDirection:'column',gap:'.45rem',flexShrink:0}}>
+                          <div style={{display:'flex',flexDirection:'column',gap:'.4rem',flexShrink:0,minWidth:90}}>
+                            {/* Featured toggle */}
                             <button
-                              onClick={async ()=>{
-                                await fetch('/api/admin/videos',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:v._id,active:!v.active})});
-                                loadVideos(); showToast(v.active?'Video hidden':'Video now showing on site','ok');
+                              onClick={async()=>{
+                                await fetch('/api/admin/videos',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:v._id,featured:!v.featured})});
+                                loadVideos(); showToast(v.featured?'Removed from featured slideshow':'⭐ Added to featured slideshow!','ok');
                               }}
-                              style={{padding:'.42rem .85rem',background:v.active?'rgba(245,158,11,.1)':'rgba(34,197,94,.1)',border:`1px solid ${v.active?'rgba(245,158,11,.25)':'rgba(34,197,94,.25)'}`,color:v.active?C.amber:C.green,fontSize:'.72rem',fontWeight:500,borderRadius:7,cursor:'pointer',fontFamily:"'Outfit',system-ui",whiteSpace:'nowrap'}}>
+                              style={{padding:'.42rem .7rem',background:v.featured?'rgba(212,168,83,.18)':'rgba(255,255,255,.05)',border:`1px solid ${v.featured?'rgba(212,168,83,.4)':C.border}`,color:v.featured?'#D4A853':C.gray,fontSize:'.7rem',fontWeight:500,borderRadius:7,cursor:'pointer',fontFamily:"'Outfit',system-ui",whiteSpace:'nowrap'}}>
+                              {v.featured ? '⭐ Featured' : '☆ Feature'}
+                            </button>
+                            {/* Category quick-change */}
+                            <select
+                              value={v.category||'general'}
+                              onChange={async e=>{
+                                await fetch('/api/admin/videos',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:v._id,category:e.target.value})});
+                                loadVideos(); showToast('Category updated','ok');
+                              }}
+                              style={{...inp,padding:'.38rem .6rem',fontSize:'.7rem',width:'100%'}}
+                            >
+                              <option value="general">🌐 General</option>
+                              <option value="birthday">🎂 Birthday</option>
+                              <option value="babyshower">🍼 Baby Shower</option>
+                              <option value="inhouse">🏡 In House</option>
+                              <option value="kids">🦄 Kids</option>
+                              <option value="haldi">🌸 Haldi</option>
+                              <option value="mandap">💍 Mandap</option>
+                              <option value="reception">💒 Reception</option>
+                              <option value="corporate">🏢 Corporate</option>
+                            </select>
+                            {/* Show/Hide */}
+                            <button
+                              onClick={async()=>{
+                                await fetch('/api/admin/videos',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:v._id,active:!v.active})});
+                                loadVideos(); showToast(v.active?'Video hidden':'Video visible on site','ok');
+                              }}
+                              style={{padding:'.42rem .7rem',background:v.active?'rgba(245,158,11,.1)':'rgba(34,197,94,.1)',border:`1px solid ${v.active?'rgba(245,158,11,.25)':'rgba(34,197,94,.25)'}`,color:v.active?C.amber:C.green,fontSize:'.7rem',fontWeight:500,borderRadius:7,cursor:'pointer',fontFamily:"'Outfit',system-ui",whiteSpace:'nowrap'}}>
                               {v.active ? 'Hide' : 'Show'}
                             </button>
+                            {/* Delete */}
                             <button
-                              onClick={async ()=>{
-                                if(!confirm('Remove this video from the website?'))return;
+                              onClick={async()=>{
+                                if(!confirm('Remove this video?'))return;
                                 await fetch('/api/admin/videos',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:v._id})});
                                 loadVideos(); showToast('Video removed','ok');
                               }}
-                              style={{padding:'.42rem .85rem',background:C.redBg,border:`1px solid rgba(239,68,68,.22)`,color:'#FCA5A5',fontSize:'.72rem',fontWeight:500,borderRadius:7,cursor:'pointer',fontFamily:"'Outfit',system-ui"}}>
-                              Remove
+                              style={{padding:'.42rem .7rem',background:C.redBg,border:`1px solid rgba(239,68,68,.22)`,color:'#FCA5A5',fontSize:'.7rem',fontWeight:500,borderRadius:7,cursor:'pointer',fontFamily:"'Outfit',system-ui"}}>
+                              🗑 Remove
                             </button>
                           </div>
                         </div>

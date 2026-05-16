@@ -35,9 +35,12 @@ export default function Home() {
   const [cName, setCName] = useState(''); const [cEmail, setCEmail] = useState('');
   const [cPhone, setCPhone] = useState(''); const [cMsg, setCMsg] = useState('');
   const [cFile, setCFile] = useState('');
-  const [videos, setVideos] = useState([]);
-  const [activeVideo, setActiveVideo] = useState(null);
-  const [recentPhotos, setRecentPhotos] = useState([]);
+  const [featuredVideos, setFeaturedVideos]   = useState([]);
+  const [activeVideo,    setActiveVideo]      = useState(null); // youtubeId currently playing in lightbox
+  const [slideIdx,       setSlideIdx]         = useState(0);   // current slide in featured slideshow
+  const [slidePlaying,   setSlidePlaying]     = useState(false);// is iframe showing in slide
+  const [recentPhotos,   setRecentPhotos]     = useState([]);
+  const [catVideos,      setCatVideos]        = useState([]); // videos for current gallery category
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 8);
@@ -47,9 +50,16 @@ export default function Home() {
 
   // fetch YouTube videos on load
   useEffect(() => {
-    fetch('/api/videos').then(r => r.json()).then(d => setVideos(d.videos || [])).catch(() => {});
-    // Fetch latest photos across all categories for the home page
-    fetch('/api/recent-photos').then(r => r.json()).then(d => setRecentPhotos(d.photos || [])).catch(() => {});
+    // Featured videos for home slideshow
+    fetch('/api/videos?featured=true&limit=8')
+      .then(r => r.json())
+      .then(d => { setFeaturedVideos(d.videos || []); })
+      .catch(() => {});
+    // Latest photos across all categories
+    fetch('/api/recent-photos')
+      .then(r => r.json())
+      .then(d => setRecentPhotos(d.photos || []))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -73,8 +83,17 @@ export default function Home() {
     setPage('gallery');
     setLoading(true);
     setItems([]);
+    setCatVideos([]);
+    setActiveVideo(null);
+    setSlidePlaying(false);
     setDrawerOpen(false);
     window.scrollTo(0, 0);
+    // Fetch category videos in parallel
+    fetch(`/api/videos?category=${slug}&limit=6`)
+      .then(r => r.json())
+      .then(d => setCatVideos(d.videos || []))
+      .catch(() => setCatVideos([]));
+
     try {
       const r = await fetch(`/api/gallery/${slug}`);
       const d = await r.json();
@@ -136,6 +155,9 @@ export default function Home() {
           .burger{display:flex!important}
           .cats-grid{grid-template-columns:repeat(2,1fr)!important;gap:.75rem!important}
           .recent-grid{grid-template-columns:repeat(2,1fr)!important;gap:7px!important}
+          .slide-layout{grid-template-columns:1fr!important}
+          .vid-playlist{max-height:260px!important;flex-direction:row!important;overflow-x:auto!important;overflow-y:hidden!important;padding-bottom:6px!important}
+          .vid-playlist>div{min-width:200px!important}
           .photo-grid{grid-template-columns:repeat(2,1fr)!important;gap:7px!important}
           .ch-grid{grid-template-columns:1fr!important}
           .frow{grid-template-columns:1fr!important}
@@ -355,89 +377,182 @@ export default function Home() {
           </div>
 
 
-          {/* ── LATEST VIDEOS ── */}
-          {videos.length > 0 && (
-            <div style={{background:'var(--dark)',padding:'4.5rem 1.5rem 5rem'}}>
-              <div style={{maxWidth:1300,margin:'0 auto'}}>
-                {/* header */}
+
+
+          {/* ══════════════════════════════════════
+              FEATURED VIDEO SLIDESHOW
+              Shows only when admin marks videos as Featured
+          ══════════════════════════════════════ */}
+          {featuredVideos.length > 0 && (
+            <div style={{background:'var(--dark)',padding:'4.5rem 1.5rem 5rem',position:'relative',overflow:'hidden'}}>
+              {/* subtle bg texture */}
+              <div style={{position:'absolute',inset:0,backgroundImage:'radial-gradient(circle at 20% 50%,rgba(200,85,106,.08) 0%,transparent 50%),radial-gradient(circle at 80% 50%,rgba(212,168,83,.06) 0%,transparent 50%)',pointerEvents:'none'}}/>
+
+              <div style={{maxWidth:1300,margin:'0 auto',position:'relative',zIndex:1}}>
+                {/* Section Header */}
                 <div style={{textAlign:'center',marginBottom:'3rem'}}>
-                  <span style={{fontSize:'.65rem',letterSpacing:'.24em',textTransform:'uppercase',color:'var(--rose)',fontWeight:500,display:'block',marginBottom:'.5rem'}}>Watch Our Work</span>
-                  <h2 style={{fontFamily:'var(--fd)',fontSize:'clamp(1.7rem,3.5vw,2.5rem)',fontWeight:400,color:'#fff',marginBottom:'.45rem'}}>Latest Videos</h2>
+                  <span style={{fontSize:'.65rem',letterSpacing:'.24em',textTransform:'uppercase',color:'var(--rose)',fontWeight:500,display:'block',marginBottom:'.5rem'}}>Watch Us Work</span>
+                  <h2 style={{fontFamily:'var(--fd)',fontSize:'clamp(1.8rem,3.5vw,2.8rem)',fontWeight:400,color:'#fff',marginBottom:'.45rem'}}>Featured Videos</h2>
                   <span style={{display:'block',width:42,height:2,background:'var(--gold)',margin:'.8rem auto 0'}}/>
-                  <p style={{color:'rgba(255,255,255,.42)',fontSize:'.88rem',fontWeight:300,marginTop:'.45rem'}}>Behind the scenes & event highlights from our recent work</p>
+                  <p style={{color:'rgba(255,255,255,.42)',fontSize:'.88rem',fontWeight:300,marginTop:'.45rem'}}>Behind the scenes and event highlights</p>
                 </div>
 
-                {/* video grid — 2 cols desktop, 1 col mobile */}
-                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,480px),1fr))',gap:'1.5rem',justifyContent:'center'}}>
-                  {videos.slice(0,4).map(v => (
-                    <div key={v.id} style={{borderRadius:12,overflow:'hidden',background:'#0a0706',boxShadow:'0 8px 40px rgba(0,0,0,.5)',transition:'transform .35s',cursor:'pointer'}}
-                      onMouseEnter={e=>e.currentTarget.style.transform='translateY(-4px)'}
-                      onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}
-                    >
-                      {/* thumbnail / player area */}
-                      <div style={{position:'relative',paddingBottom:'56.25%',background:'#000'}}>
-                        {activeVideo === v.youtubeId ? (
-                          /* — PLAYING — autoplay iframe */
-                          <iframe
-                            src={`https://www.youtube.com/embed/${v.youtubeId}?autoplay=1&rel=0&modestbranding=1`}
-                            title={v.title || 'Event video'}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                            style={{position:'absolute',inset:0,width:'100%',height:'100%',border:'none'}}
+                {/* ── MAIN SLIDE AREA ── */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr minmax(0,320px)',gap:'1.5rem',alignItems:'start'}} className="slide-layout">
+
+                  {/* Left: big player */}
+                  <div style={{borderRadius:14,overflow:'hidden',background:'#000',position:'relative',boxShadow:'0 24px 80px rgba(0,0,0,.6)'}}>
+                    {/* 16:9 aspect ratio wrapper */}
+                    <div style={{position:'relative',paddingBottom:'56.25%',background:'#000'}}>
+
+                      {slidePlaying ? (
+                        /* ── IFRAME PLAYER — autoplay when user clicks play ── */
+                        <iframe
+                          key={featuredVideos[slideIdx]?.youtubeId}
+                          src={`https://www.youtube.com/embed/${featuredVideos[slideIdx]?.youtubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1&enablejsapi=1`}
+                          title={featuredVideos[slideIdx]?.title || 'Event video'}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          style={{position:'absolute',inset:0,width:'100%',height:'100%',border:'none'}}
+                        />
+                      ) : (
+                        /* ── THUMBNAIL POSTER — click to play ── */
+                        <div style={{position:'absolute',inset:0,cursor:'pointer'}} onClick={() => setSlidePlaying(true)}>
+                          {/* Thumbnail image with fallback chain: maxres → hq → mq */}
+                          <img
+                            src={featuredVideos[slideIdx]?.thumbUrl}
+                            alt={featuredVideos[slideIdx]?.title || 'Video thumbnail'}
+                            onError={e => {
+                              if (e.target.src.includes('maxresdefault')) {
+                                e.target.src = e.target.src.replace('maxresdefault','hqdefault');
+                              } else if (e.target.src.includes('hqdefault')) {
+                                e.target.src = e.target.src.replace('hqdefault','mqdefault');
+                              }
+                            }}
+                            style={{width:'100%',height:'100%',objectFit:'cover',display:'block',position:'absolute',inset:0}}
                           />
-                        ) : (
-                          /* — THUMBNAIL — click to play */
-                          <div style={{position:'absolute',inset:0}} onClick={()=>setActiveVideo(v.youtubeId)}>
-                            <img
-                              src={`https://img.youtube.com/vi/${v.youtubeId}/maxresdefault.jpg`}
-                              alt={v.title || 'Event video thumbnail'}
-                              style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}
-                              onError={e=>{e.target.src=`https://img.youtube.com/vi/${v.youtubeId}/hqdefault.jpg`}}
-                            />
-                            {/* dark overlay */}
-                            <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.3)',transition:'background .25s'}}
-                              onMouseEnter={e=>e.currentTarget.style.background='rgba(0,0,0,.15)'}
-                              onMouseLeave={e=>e.currentTarget.style.background='rgba(0,0,0,.3)'}
-                            />
-                            {/* play button */}
-                            <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                              <div style={{width:68,height:68,borderRadius:'50%',background:'rgba(200,85,106,.92)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 24px rgba(200,85,106,.5)',transition:'transform .2s,box-shadow .2s'}}
-                                onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.1)';e.currentTarget.style.boxShadow='0 6px 32px rgba(200,85,106,.7)'}}
-                                onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 4px 24px rgba(200,85,106,.5)'}}
-                              >
-                                {/* YouTube-style play triangle */}
-                                <svg width="26" height="26" viewBox="0 0 24 24" fill="white">
-                                  <path d="M8 5v14l11-7z"/>
-                                </svg>
-                              </div>
-                            </div>
-                            {/* YouTube logo badge */}
-                            <div style={{position:'absolute',bottom:'.7rem',right:'.8rem',display:'flex',alignItems:'center',gap:'.35rem',background:'rgba(0,0,0,.65)',padding:'.25rem .6rem',borderRadius:4,backdropFilter:'blur(4px)'}}>
-                              <svg viewBox="0 0 24 24" width="14" height="14" fill="#FF0000"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8z"/><path d="M9.6 15.6V8.4l6.3 3.6-6.3 3.6z" fill="white"/></svg>
-                              <span style={{fontSize:'.62rem',color:'rgba(255,255,255,.7)',fontWeight:500,letterSpacing:'.05em'}}>YouTube</span>
+
+                          {/* Gradient overlay */}
+                          <div style={{position:'absolute',inset:0,background:'linear-gradient(to top,rgba(0,0,0,.7) 0%,rgba(0,0,0,.1) 40%,transparent 70%)'}}/>
+
+                          {/* ── Play button ── */}
+                          <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                            <div
+                              style={{width:80,height:80,borderRadius:'50%',background:'rgba(200,85,106,.9)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 32px rgba(200,85,106,.6)',transition:'transform .25s,box-shadow .25s'}}
+                              onMouseEnter={e=>{e.currentTarget.style.transform='scale(1.1)';e.currentTarget.style.boxShadow='0 8px 48px rgba(200,85,106,.8)'}}
+                              onMouseLeave={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 4px 32px rgba(200,85,106,.6)'}}
+                            >
+                              <svg width="32" height="32" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
                             </div>
                           </div>
-                        )}
-                      </div>
-                      {/* text info below video */}
-                      <div style={{padding:'1.1rem 1.3rem 1.2rem'}}>
-                        {v.title && (
-                          <h3 style={{fontFamily:'var(--fd)',fontSize:'1.05rem',fontWeight:400,color:'#fff',lineHeight:1.35,marginBottom:'.4rem'}}>{v.title}</h3>
-                        )}
-                        {v.description && (
-                          <p style={{fontSize:'.8rem',color:'rgba(255,255,255,.45)',fontWeight:300,lineHeight:1.65,marginBottom:'.7rem'}}>{v.description}</p>
-                        )}
-                        <a href={`https://www.youtube.com/watch?v=${v.youtubeId}`} target="_blank" rel="noopener noreferrer"
-                          style={{display:'inline-flex',alignItems:'center',gap:'.35rem',fontSize:'.72rem',color:'var(--rose)',fontWeight:500,letterSpacing:'.05em',textDecoration:'none',transition:'color .2s'}}
-                          onMouseEnter={e=>e.currentTarget.style.color='#e87080'}
-                          onMouseLeave={e=>e.currentTarget.style.color='var(--rose)'}
-                        >
-                          Watch on YouTube
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                        </a>
-                      </div>
+
+                          {/* Bottom info overlay */}
+                          <div style={{position:'absolute',bottom:0,left:0,right:0,padding:'1.5rem 1.8rem'}}>
+                            {featuredVideos[slideIdx]?.title && (
+                              <h3 style={{fontFamily:'var(--fd)',color:'#fff',fontSize:'clamp(1rem,2.5vw,1.5rem)',fontWeight:400,lineHeight:1.3,marginBottom:'.4rem'}}>
+                                {featuredVideos[slideIdx].title}
+                              </h3>
+                            )}
+                            {featuredVideos[slideIdx]?.description && (
+                              <p style={{color:'rgba(255,255,255,.6)',fontSize:'.82rem',fontWeight:300,lineHeight:1.6,display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'}}>
+                                {featuredVideos[slideIdx].description}
+                              </p>
+                            )}
+                            <div style={{display:'flex',alignItems:'center',gap:'1rem',marginTop:'.8rem'}}>
+                              <span style={{fontSize:'.7rem',color:'var(--rose)',fontWeight:500,display:'flex',alignItems:'center',gap:'.3rem'}}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                Click to play
+                              </span>
+                              <a href={featuredVideos[slideIdx]?.watchUrl} target="_blank" rel="noopener noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                style={{fontSize:'.7rem',color:'rgba(255,255,255,.45)',display:'flex',alignItems:'center',gap:'.3rem',textDecoration:'none',transition:'color .2s'}}
+                                onMouseEnter={e=>e.currentTarget.style.color='rgba(255,255,255,.8)'}
+                                onMouseLeave={e=>e.currentTarget.style.color='rgba(255,255,255,.45)'}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="#FF0000"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8z"/><path d="M9.6 15.6V8.4l6.3 3.6-6.3 3.6z" fill="white"/></svg>
+                                Watch on YouTube
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  ))}
+
+                    {/* ── Slide navigation dots + arrows (BELOW player) ── */}
+                    {featuredVideos.length > 1 && (
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'.8rem 1.2rem',background:'rgba(0,0,0,.6)',backdropFilter:'blur(8px)'}}>
+                        {/* Prev */}
+                        <button
+                          onClick={() => { setSlidePlaying(false); setSlideIdx(i => (i - 1 + featuredVideos.length) % featuredVideos.length); }}
+                          style={{width:34,height:34,borderRadius:'50%',border:'1px solid rgba(255,255,255,.2)',background:'rgba(255,255,255,.08)',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1rem',transition:'all .2s',fontFamily:'inherit'}}
+                          onMouseEnter={e=>{e.currentTarget.style.background='var(--rose)';e.currentTarget.style.borderColor='var(--rose)'}}
+                          onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.08)';e.currentTarget.style.borderColor='rgba(255,255,255,.2)'}}
+                        >‹</button>
+
+                        {/* Dots */}
+                        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                          {featuredVideos.map((_,i) => (
+                            <button key={i}
+                              onClick={() => { setSlidePlaying(false); setSlideIdx(i); }}
+                              style={{width:slideIdx===i?22:7,height:7,borderRadius:slideIdx===i?4:50,background:slideIdx===i?'var(--rose)':'rgba(255,255,255,.3)',border:'none',cursor:'pointer',transition:'all .3s',padding:0}}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Next */}
+                        <button
+                          onClick={() => { setSlidePlaying(false); setSlideIdx(i => (i + 1) % featuredVideos.length); }}
+                          style={{width:34,height:34,borderRadius:'50%',border:'1px solid rgba(255,255,255,.2)',background:'rgba(255,255,255,.08)',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1rem',transition:'all .2s',fontFamily:'inherit'}}
+                          onMouseEnter={e=>{e.currentTarget.style.background='var(--rose)';e.currentTarget.style.borderColor='var(--rose)'}}
+                          onMouseLeave={e=>{e.currentTarget.style.background='rgba(255,255,255,.08)';e.currentTarget.style.borderColor='rgba(255,255,255,.2)'}}
+                        >›</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: video playlist */}
+                  <div style={{display:'flex',flexDirection:'column',gap:'.7rem',maxHeight:480,overflowY:'auto',paddingRight:4}} className="vid-playlist">
+                    {featuredVideos.map((v, i) => (
+                      <div key={v.id}
+                        onClick={() => { setSlidePlaying(false); setSlideIdx(i); }}
+                        style={{
+                          display:'flex',gap:'.75rem',alignItems:'center',
+                          padding:'.75rem',borderRadius:10,cursor:'pointer',
+                          background:i===slideIdx?'rgba(200,85,106,.15)':'rgba(255,255,255,.04)',
+                          border:`1px solid ${i===slideIdx?'rgba(200,85,106,.4)':'rgba(255,255,255,.07)'}`,
+                          transition:'all .22s',flexShrink:0,
+                        }}
+                        onMouseEnter={e=>{ if(i!==slideIdx){ e.currentTarget.style.background='rgba(255,255,255,.08)'; }}}
+                        onMouseLeave={e=>{ if(i!==slideIdx){ e.currentTarget.style.background='rgba(255,255,255,.04)'; }}}
+                      >
+                        {/* Mini thumbnail */}
+                        <div style={{width:80,aspectRatio:'16/9',borderRadius:6,overflow:'hidden',flexShrink:0,position:'relative',background:'#000'}}>
+                          <img
+                            src={v.thumbUrl}
+                            alt={v.title||'video'}
+                            onError={e=>{ if(e.target.src.includes('maxresdefault')) e.target.src=e.target.src.replace('maxresdefault','hqdefault'); }}
+                            style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}
+                          />
+                          {/* play icon overlay */}
+                          <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.3)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                            <div style={{width:22,height:22,borderRadius:'50%',background:i===slideIdx?'var(--rose)':'rgba(255,255,255,.7)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill={i===slideIdx?'white':'#333'}><path d="M8 5v14l11-7z"/></svg>
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:'.82rem',fontWeight:500,color:i===slideIdx?'#fff':'rgba(255,255,255,.7)',lineHeight:1.35,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>
+                            {v.title || 'Event Video'}
+                          </div>
+                          {v.description && (
+                            <div style={{fontSize:'.7rem',color:'rgba(255,255,255,.35)',marginTop:'.2rem',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                              {v.description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -568,6 +683,56 @@ export default function Home() {
                     {item.type==='video' && <div style={{position:'absolute',top:'.45rem',left:'.45rem',background:'rgba(0,0,0,.58)',color:'#fff',fontSize:'.6rem',letterSpacing:'.07em',textTransform:'uppercase',padding:'.18rem .45rem',borderRadius:4}}>▶ Video</div>}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* ── Category Videos ── */}
+            {catVideos.length > 0 && (
+              <div style={{marginTop:'3rem',paddingTop:'2.5rem',borderTop:'1px solid var(--cream)'}}>
+                <div style={{marginBottom:'1.6rem'}}>
+                  <span style={{fontSize:'.65rem',letterSpacing:'.22em',textTransform:'uppercase',color:'var(--rose)',fontWeight:500,display:'block',marginBottom:'.3rem'}}>Video Highlights</span>
+                  <h3 style={{fontFamily:'var(--fd)',fontSize:'clamp(1.4rem,3vw,2rem)',fontWeight:400,color:'var(--dark)'}}>Related Videos</h3>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(min(100%,300px),1fr))',gap:'1.2rem'}}>
+                  {catVideos.map(v => (
+                    <div key={v.id} style={{borderRadius:10,overflow:'hidden',background:'var(--dark)',boxShadow:'var(--sh)',transition:'transform .3s'}}>
+                      <div style={{position:'relative',paddingBottom:'56.25%',background:'#000'}}>
+                        {activeVideo===v.youtubeId ? (
+                          <iframe
+                            src={`https://www.youtube.com/embed/${v.youtubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+                            title={v.title||'Event video'}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            style={{position:'absolute',inset:0,width:'100%',height:'100%',border:'none'}}
+                          />
+                        ) : (
+                          <div style={{position:'absolute',inset:0,cursor:'pointer'}} onClick={()=>setActiveVideo(v.youtubeId)}>
+                            <img
+                              src={v.thumbUrl}
+                              alt={v.title||'video'}
+                              onError={e=>{if(e.target.src.includes('maxresdefault'))e.target.src=e.target.src.replace('maxresdefault','hqdefault')}}
+                              style={{width:'100%',height:'100%',objectFit:'cover',display:'block',position:'absolute',inset:0}}
+                            />
+                            <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.3)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                              <div style={{width:52,height:52,borderRadius:'50%',background:'rgba(200,85,106,.9)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 20px rgba(200,85,106,.5)'}}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{padding:'.9rem 1rem 1rem'}}>
+                        {v.title && <div style={{fontFamily:'var(--fd)',color:'#fff',fontSize:'.95rem',fontWeight:400,marginBottom:'.25rem',lineHeight:1.35}}>{v.title}</div>}
+                        {v.description && <div style={{fontSize:'.75rem',color:'rgba(255,255,255,.45)',lineHeight:1.6,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{v.description}</div>}
+                        <a href={v.watchUrl} target="_blank" rel="noopener noreferrer"
+                          style={{display:'inline-flex',alignItems:'center',gap:'.3rem',marginTop:'.6rem',fontSize:'.7rem',color:'var(--rose)',textDecoration:'none'}}>
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="#FF0000"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8z"/><path d="M9.6 15.6V8.4l6.3 3.6-6.3 3.6z" fill="white"/></svg>
+                          Watch on YouTube
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
